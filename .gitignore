@@ -7,6 +7,7 @@
 *.dll
 *.so
 *.dylib
+rediscan
 
 # Test binary, built with `go test -c`
 *.test
