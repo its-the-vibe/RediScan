@@ -74,7 +74,7 @@ func getAvailableLists() ([]string, error) {
 	// Use SCAN instead of KEYS for better performance
 	var lists []string
 	var cursor uint64
-	
+
 	for {
 		var keys []string
 		var err error
@@ -230,6 +230,11 @@ func indexHandler(w http.ResponseWriter, r *http.Request) {
             <a href="/lindex?key={{. | urlquery}}&index=0">{{.}}</a>
         </div>
         {{end}}
+    </div>
+    {{else}}
+    <div class="available-lists">
+        <h2>Available Redis Lists</h2>
+        <p class="no-lists">No Redis lists found. Create a list in Redis to get started.</p>
     </div>
     {{end}}
     <form action="/lindex" method="get">
