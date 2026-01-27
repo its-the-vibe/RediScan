@@ -92,20 +92,20 @@ func getAvailableLists() ([]string, error) {
 			}
 			_, err = pipe.Exec(ctx)
 			if err != nil {
-				// Continue even if pipeline fails
-				log.Printf("Warning: Pipeline error: %v", err)
-			}
-
-			// Check results and filter for lists
-			for i, key := range keys {
-				keyType, err := typeCmds[i].Result()
-				if err != nil {
-					continue
-				}
-				if keyType == "list" {
-					lists = append(lists, key)
-					if len(lists) >= maxLists {
-						return lists, nil
+				// Skip this batch if pipeline fails, log and continue with next scan iteration
+				log.Printf("Warning: Pipeline error, skipping batch: %v", err)
+			} else {
+				// Check results and filter for lists only when pipeline succeeds
+				for i, key := range keys {
+					keyType, err := typeCmds[i].Result()
+					if err != nil {
+						continue
+					}
+					if keyType == "list" {
+						lists = append(lists, key)
+						if len(lists) >= maxLists {
+							return lists, nil
+						}
 					}
 				}
 			}
