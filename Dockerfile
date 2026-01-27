@@ -1,5 +1,5 @@
 # Build stage
-FROM golang:1.24-alpine AS builder
+FROM golang:1.25.5-alpine AS builder
 
 # Install CA certificates for HTTPS
 RUN apk add --no-cache ca-certificates
@@ -16,7 +16,7 @@ RUN go mod download
 COPY main.go ./
 
 # Build static binary
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -a -installsuffix cgo -ldflags="-w -s" -o rediscan .
+RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -ldflags="-w -s" -o rediscan .
 
 # Runtime stage - using scratch for minimal image size
 FROM scratch

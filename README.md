@@ -13,7 +13,7 @@ A lightweight web UI to inspect and page through Redis lists with automatic JSON
 
 ## Prerequisites
 
-- Go 1.24+ (for local development)
+- Go 1.25+ (for local development)
 - Docker and Docker Compose (for containerized deployment)
 - An external Redis server
 
