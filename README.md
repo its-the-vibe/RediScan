@@ -5,6 +5,7 @@ A lightweight web UI to inspect and page through Redis lists with automatic JSON
 ## Features
 
 - 🔍 **Inspect Redis Lists**: Browse through Redis list elements with a user-friendly web interface
+- 📋 **List Discovery**: Automatically displays available Redis lists on the index page with clickable links
 - 🎨 **JSON Pretty-Printing**: Automatically formats JSON data for easy reading
 - ⌨️ **Keyboard Navigation**: Use arrow keys to navigate through list elements
 - 🔒 **Secure**: Supports Redis password authentication
@@ -71,15 +72,17 @@ Configure the application using environment variables:
 | `REDIS_PASSWORD` | Redis password (if required) | (empty) |
 | `REDIS_DB` | Redis database number | `0` |
 | `PORT` | HTTP server port | `8080` |
+| `MAX_LISTS` | Maximum number of lists to display on index page | `10` |
 
 ## Usage
 
 ### Web Interface
 
 1. Navigate to the home page (http://localhost:8080)
-2. Enter the Redis list key and starting index
-3. Click "Inspect" to view the element
-4. Use the navigation buttons or arrow keys (← →) to browse through the list
+2. View the list of available Redis lists with clickable links
+3. Click on a list name to inspect it, or manually enter a Redis list key and starting index
+4. Click "Inspect" to view the element
+5. Use the navigation buttons or arrow keys (← →) to browse through the list
 
 ### API Endpoint
 
