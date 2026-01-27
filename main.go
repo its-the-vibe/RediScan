@@ -71,24 +71,34 @@ func main() {
 
 // getAvailableLists retrieves a list of available Redis list keys
 func getAvailableLists() ([]string, error) {
-	// Get all keys using KEYS command
-	keys, err := redisClient.Keys(ctx, "*").Result()
-	if err != nil {
-		return nil, err
-	}
-
-	// Filter for lists only
+	// Use SCAN instead of KEYS for better performance
 	var lists []string
-	for _, key := range keys {
-		keyType, err := redisClient.Type(ctx, key).Result()
+	var cursor uint64
+	
+	for {
+		var keys []string
+		var err error
+		keys, cursor, err = redisClient.Scan(ctx, cursor, "*", 100).Result()
 		if err != nil {
-			continue
+			return nil, err
 		}
-		if keyType == "list" {
-			lists = append(lists, key)
-			if len(lists) >= maxLists {
-				break
+
+		// Filter for lists only
+		for _, key := range keys {
+			keyType, err := redisClient.Type(ctx, key).Result()
+			if err != nil {
+				continue
 			}
+			if keyType == "list" {
+				lists = append(lists, key)
+				if len(lists) >= maxLists {
+					return lists, nil
+				}
+			}
+		}
+
+		if cursor == 0 {
+			break
 		}
 	}
 
@@ -203,7 +213,7 @@ func indexHandler(w http.ResponseWriter, r *http.Request) {
         <h2>Available Redis Lists</h2>
         {{range .AvailableLists}}
         <div class="list-item">
-            <a href="/lindex?key={{.}}&index=0">{{.}}</a>
+            <a href="/lindex?key={{. | urlquery}}&index=0">{{.}}</a>
         </div>
         {{end}}
     </div>
