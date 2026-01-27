@@ -16,6 +16,7 @@ import (
 var (
 	redisClient *redis.Client
 	ctx         = context.Background()
+	maxLists    = 10 // Default max number of lists to display on index page
 )
 
 func main() {
@@ -39,6 +40,13 @@ func main() {
 		DB:       redisDB,
 	})
 
+	// Configure max lists to display
+	if maxListsStr := os.Getenv("MAX_LISTS"); maxListsStr != "" {
+		if ml, err := strconv.Atoi(maxListsStr); err == nil && ml > 0 {
+			maxLists = ml
+		}
+	}
+
 	// Test Redis connection
 	if err := redisClient.Ping(ctx).Err(); err != nil {
 		log.Printf("Warning: Could not connect to Redis at %s: %v", redisAddr, err)
@@ -61,10 +69,67 @@ func main() {
 	}
 }
 
+// getAvailableLists retrieves a list of available Redis list keys
+func getAvailableLists() ([]string, error) {
+	// Use SCAN instead of KEYS for better performance
+	var lists []string
+	var cursor uint64
+
+	for {
+		var keys []string
+		var err error
+		keys, cursor, err = redisClient.Scan(ctx, cursor, "*", 100).Result()
+		if err != nil {
+			return nil, err
+		}
+
+		// Use pipeline to batch TYPE commands for better performance
+		if len(keys) > 0 {
+			pipe := redisClient.Pipeline()
+			typeCmds := make([]*redis.StatusCmd, len(keys))
+			for i, key := range keys {
+				typeCmds[i] = pipe.Type(ctx, key)
+			}
+			_, err = pipe.Exec(ctx)
+			if err != nil {
+				// Skip this batch if pipeline fails, log and continue with next scan iteration
+				log.Printf("Warning: Pipeline error, skipping batch: %v", err)
+			} else {
+				// Check results and filter for lists only when pipeline succeeds
+				for i, key := range keys {
+					keyType, err := typeCmds[i].Result()
+					if err != nil {
+						continue
+					}
+					if keyType == "list" {
+						lists = append(lists, key)
+						if len(lists) >= maxLists {
+							return lists, nil
+						}
+					}
+				}
+			}
+		}
+
+		if cursor == 0 {
+			break
+		}
+	}
+
+	return lists, nil
+}
+
 func indexHandler(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path != "/" {
 		http.NotFound(w, r)
 		return
+	}
+
+	// Get available Redis lists
+	availableLists, err := getAvailableLists()
+	if err != nil {
+		log.Printf("Error fetching available lists: %v", err)
+		// Continue even if we can't fetch lists
 	}
 
 	tmpl := `<!DOCTYPE html>
@@ -119,6 +184,36 @@ func indexHandler(w http.ResponseWriter, r *http.Request) {
         button:hover {
             background-color: #45a049;
         }
+        .available-lists {
+            background-color: white;
+            padding: 20px;
+            border-radius: 5px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        .available-lists h2 {
+            margin-top: 0;
+            color: #333;
+        }
+        .list-item {
+            padding: 10px;
+            margin: 5px 0;
+            background-color: #f9f9f9;
+            border-radius: 3px;
+            border-left: 3px solid #4CAF50;
+        }
+        .list-item a {
+            color: #2196F3;
+            text-decoration: none;
+            font-weight: 500;
+        }
+        .list-item a:hover {
+            text-decoration: underline;
+        }
+        .no-lists {
+            color: #666;
+            font-style: italic;
+        }
     </style>
 </head>
 <body>
@@ -127,6 +222,21 @@ func indexHandler(w http.ResponseWriter, r *http.Request) {
         <p>This tool allows you to inspect Redis lists with automatic JSON pretty-printing.</p>
         <p>Use cursor keys to navigate through list elements once loaded.</p>
     </div>
+    {{if .AvailableLists}}
+    <div class="available-lists">
+        <h2>Available Redis Lists</h2>
+        {{range .AvailableLists}}
+        <div class="list-item">
+            <a href="/lindex?key={{. | urlquery}}&index=0">{{.}}</a>
+        </div>
+        {{end}}
+    </div>
+    {{else}}
+    <div class="available-lists">
+        <h2>Available Redis Lists</h2>
+        <p class="no-lists">No Redis lists found. Create a list in Redis to get started.</p>
+    </div>
+    {{end}}
     <form action="/lindex" method="get">
         <label for="key">Redis List Key:</label>
         <input type="text" id="key" name="key" required placeholder="e.g., mylist">
@@ -139,8 +249,22 @@ func indexHandler(w http.ResponseWriter, r *http.Request) {
 </body>
 </html>`
 
+	tmplParsed, err := template.New("index").Parse(tmpl)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Template error: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	data := struct {
+		AvailableLists []string
+	}{
+		AvailableLists: availableLists,
+	}
+
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	fmt.Fprint(w, tmpl)
+	if err := tmplParsed.Execute(w, data); err != nil {
+		log.Printf("Error rendering template: %v", err)
+	}
 }
 
 func lindexHandler(w http.ResponseWriter, r *http.Request) {
