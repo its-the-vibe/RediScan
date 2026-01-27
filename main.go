@@ -83,16 +83,30 @@ func getAvailableLists() ([]string, error) {
 			return nil, err
 		}
 
-		// Filter for lists only
-		for _, key := range keys {
-			keyType, err := redisClient.Type(ctx, key).Result()
-			if err != nil {
-				continue
+		// Use pipeline to batch TYPE commands for better performance
+		if len(keys) > 0 {
+			pipe := redisClient.Pipeline()
+			typeCmds := make([]*redis.StatusCmd, len(keys))
+			for i, key := range keys {
+				typeCmds[i] = pipe.Type(ctx, key)
 			}
-			if keyType == "list" {
-				lists = append(lists, key)
-				if len(lists) >= maxLists {
-					return lists, nil
+			_, err = pipe.Exec(ctx)
+			if err != nil {
+				// Continue even if pipeline fails
+				log.Printf("Warning: Pipeline error: %v", err)
+			}
+
+			// Check results and filter for lists
+			for i, key := range keys {
+				keyType, err := typeCmds[i].Result()
+				if err != nil {
+					continue
+				}
+				if keyType == "list" {
+					lists = append(lists, key)
+					if len(lists) >= maxLists {
+						return lists, nil
+					}
 				}
 			}
 		}
