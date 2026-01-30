@@ -1,5 +1,5 @@
 # Build stage
-FROM golang:1.25.5-alpine AS builder
+FROM golang:1.25.6-alpine AS builder
 
 # Install CA certificates for HTTPS
 RUN apk add --no-cache ca-certificates
