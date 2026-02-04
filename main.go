@@ -14,9 +14,10 @@ import (
 )
 
 var (
-	redisClient *redis.Client
-	ctx         = context.Background()
-	maxLists    = 10 // Default max number of lists to display on index page
+	redisClient    *redis.Client
+	ctx            = context.Background()
+	maxLists       = 10   // Default max number of lists to display on index page
+	maxPreloadSize = 1000 // Maximum number of values to preload for instant navigation
 )
 
 func main() {
@@ -317,18 +318,38 @@ func lindexHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Get the element at index
-	value, err := redisClient.LIndex(ctx, key, index).Result()
-	if err != nil {
-		renderError(w, fmt.Sprintf("Error getting element: %v", err))
-		return
+	// Decide whether to preload all values or load one at a time
+	// For lists larger than maxPreloadSize, use single-value loading to avoid memory issues
+	if llen <= int64(maxPreloadSize) {
+		// Get all elements from the list at once for instant navigation
+		allValues, err := redisClient.LRange(ctx, key, 0, -1).Result()
+		if err != nil {
+			renderError(w, fmt.Sprintf("Error getting list elements: %v", err))
+			return
+		}
+
+		// Pretty-print all JSON values
+		prettyValues := make([]string, len(allValues))
+		for i, value := range allValues {
+			prettyValues[i] = prettyPrintJSON(value)
+		}
+
+		// Render the result with all values preloaded
+		renderResultWithPreload(w, key, index, llen, prettyValues)
+	} else {
+		// For large lists, load only the current value
+		value, err := redisClient.LIndex(ctx, key, index).Result()
+		if err != nil {
+			renderError(w, fmt.Sprintf("Error getting element: %v", err))
+			return
+		}
+
+		// Try to pretty-print as JSON
+		prettyValue := prettyPrintJSON(value)
+
+		// Render the result without preloading (traditional navigation)
+		renderResultWithoutPreload(w, key, index, llen, prettyValue)
 	}
-
-	// Try to pretty-print as JSON
-	prettyValue := prettyPrintJSON(value)
-
-	// Render the result
-	renderResult(w, key, index, llen, prettyValue)
 }
 
 func prettyPrintJSON(value string) string {
@@ -347,7 +368,187 @@ func prettyPrintJSON(value string) string {
 	return string(prettyJSON)
 }
 
-func renderResult(w http.ResponseWriter, key string, index int64, llen int64, value string) {
+func renderResultWithPreload(w http.ResponseWriter, key string, index int64, llen int64, allValues []string) {
+	tmplStr := `<!DOCTYPE html>
+<html>
+<head>
+    <title>RediScan - {{.Key}}[{{.Index}}]</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        h1 {
+            color: #333;
+        }
+        .metadata {
+            background-color: white;
+            padding: 15px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .metadata p {
+            margin: 5px 0;
+        }
+        .navigation {
+            background-color: white;
+            padding: 15px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+        .navigation button {
+            background-color: #2196F3;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 3px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+        .navigation button:hover {
+            background-color: #0b7dda;
+        }
+        .navigation button:disabled {
+            background-color: #ccc;
+            cursor: not-allowed;
+        }
+        .navigation .info {
+            flex-grow: 1;
+            text-align: center;
+            font-weight: bold;
+        }
+        .value-container {
+            background-color: white;
+            padding: 20px;
+            border-radius: 5px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        pre {
+            background-color: #f4f4f4;
+            padding: 15px;
+            border-radius: 3px;
+            overflow-x: auto;
+            border: 1px solid #ddd;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+        .back-link {
+            display: inline-block;
+            margin-top: 20px;
+            color: #2196F3;
+            text-decoration: none;
+        }
+        .back-link:hover {
+            text-decoration: underline;
+        }
+    </style>
+</head>
+<body>
+    <h1>RediScan - Redis List Inspector</h1>
+    
+    <div class="metadata">
+        <p><strong>Key:</strong> {{.Key}}</p>
+        <p><strong>Index:</strong> {{.Index}}</p>
+        <p><strong>List Length:</strong> {{.LLen}}</p>
+    </div>
+
+    <div class="navigation">
+        <button id="prevBtn" onclick="navigate(-1)">← Previous (Left Arrow)</button>
+        <div class="info">{{.Index}} / {{.MaxIndex}}</div>
+        <button id="nextBtn" onclick="navigate(1)">Next (Right Arrow) →</button>
+    </div>
+
+    <div class="value-container">
+        <h2>Value:</h2>
+        <pre id="valueDisplay">{{index .AllValues .Index}}</pre>
+    </div>
+
+    <a href="/" class="back-link">← Back to Home</a>
+
+    <script>
+        const key = {{.Key}};
+        let currentIndex = {{.Index}};
+        const maxIndex = {{.MaxIndex}};
+        const allValues = {{.AllValuesJSON}};
+
+        function navigate(delta) {
+            let newIndex = currentIndex + delta;
+            // Wrap around: if going below 0, go to maxIndex; if going above maxIndex, go to 0
+            if (newIndex < 0) {
+                newIndex = maxIndex;
+            } else if (newIndex > maxIndex) {
+                newIndex = 0;
+            }
+            
+            // Update the display with the preloaded value
+            document.getElementById('valueDisplay').textContent = allValues[newIndex];
+            
+            // Update the metadata
+            document.querySelector('.navigation .info').textContent = newIndex + ' / ' + maxIndex;
+            
+            // Update the current index for next navigation
+            window.history.replaceState({}, '', '/lindex?key=' + encodeURIComponent(key) + '&index=' + newIndex);
+            currentIndex = newIndex;
+        }
+
+        // Handle keyboard navigation
+        document.addEventListener('keydown', function(event) {
+            if (event.key === 'ArrowLeft' || event.key === 'Left') {
+                event.preventDefault();
+                navigate(-1);
+            } else if (event.key === 'ArrowRight' || event.key === 'Right') {
+                event.preventDefault();
+                navigate(1);
+            }
+        });
+    </script>
+</body>
+</html>`
+
+	tmpl, err := template.New("result").Parse(tmplStr)
+	if err != nil {
+		renderError(w, fmt.Sprintf("Template error: %v", err))
+		return
+	}
+
+	// Convert allValues to JSON for embedding in JavaScript
+	allValuesJSON, err := json.Marshal(allValues)
+	if err != nil {
+		renderError(w, fmt.Sprintf("Error encoding values: %v", err))
+		return
+	}
+
+	data := struct {
+		Key           string
+		Index         int64
+		LLen          int64
+		MaxIndex      int64
+		AllValues     []string
+		AllValuesJSON template.JS
+	}{
+		Key:           key,
+		Index:         index,
+		LLen:          llen,
+		MaxIndex:      llen - 1,
+		AllValues:     allValues,
+		AllValuesJSON: template.JS(allValuesJSON),
+	}
+
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	if err := tmpl.Execute(w, data); err != nil {
+		log.Printf("Error rendering template: %v", err)
+	}
+}
+
+func renderResultWithoutPreload(w http.ResponseWriter, key string, index int64, llen int64, value string) {
 	tmplStr := `<!DOCTYPE html>
 <html>
 <head>
