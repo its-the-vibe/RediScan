@@ -239,6 +239,10 @@ func indexHandler(w http.ResponseWriter, r *http.Request) {
         .list-item a:hover {
             text-decoration: underline;
         }
+        .list-size {
+            color: #666;
+            font-size: 14px;
+        }
         .no-lists {
             color: #666;
             font-style: italic;
@@ -256,7 +260,7 @@ func indexHandler(w http.ResponseWriter, r *http.Request) {
         <h2>Available Redis Lists</h2>
         {{range .AvailableLists}}
         <div class="list-item">
-            <a href="/lindex?key={{.Name | urlquery}}">{{.Name}}</a> <span style="color: #666; font-size: 14px;">({{.Size}} element{{if ne .Size 1}}s{{end}})</span>
+            <a href="/lindex?key={{.Name | urlquery}}">{{.Name}}</a> <span class="list-size">({{.Size}} element{{if ne .Size 1}}s{{end}})</span>
         </div>
         {{end}}
     </div>
