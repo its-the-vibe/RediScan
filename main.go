@@ -461,9 +461,9 @@ func renderResultWithPreload(w http.ResponseWriter, key string, index int64, lle
     </div>
 
     <div class="navigation">
-        <button id="prevBtn" {{if eq .Index 0}}disabled{{end}} onclick="navigate(-1)">← Previous (Left Arrow)</button>
+        <button id="prevBtn" onclick="navigate(-1)">← Previous (Left Arrow)</button>
         <div class="info">{{.Index}} / {{.MaxIndex}}</div>
-        <button id="nextBtn" {{if eq .Index .MaxIndex}}disabled{{end}} onclick="navigate(1)">Next (Right Arrow) →</button>
+        <button id="nextBtn" onclick="navigate(1)">Next (Right Arrow) →</button>
     </div>
 
     <div class="value-container">
@@ -480,36 +480,33 @@ func renderResultWithPreload(w http.ResponseWriter, key string, index int64, lle
         const allValues = {{.AllValuesJSON}};
 
         function navigate(delta) {
-            const newIndex = currentIndex + delta;
-            if (newIndex >= 0 && newIndex <= maxIndex) {
-                // Update the display with the preloaded value
-                document.getElementById('valueDisplay').textContent = allValues[newIndex];
-                
-                // Update the metadata
-                document.querySelector('.navigation .info').textContent = newIndex + ' / ' + maxIndex;
-                
-                // Update button states
-                document.getElementById('prevBtn').disabled = (newIndex === 0);
-                document.getElementById('nextBtn').disabled = (newIndex === maxIndex);
-                
-                // Update the current index for next navigation
-                window.history.replaceState({}, '', '/lindex?key=' + encodeURIComponent(key) + '&index=' + newIndex);
-                currentIndex = newIndex;
+            let newIndex = currentIndex + delta;
+            // Wrap around: if going below 0, go to maxIndex; if going above maxIndex, go to 0
+            if (newIndex < 0) {
+                newIndex = maxIndex;
+            } else if (newIndex > maxIndex) {
+                newIndex = 0;
             }
+            
+            // Update the display with the preloaded value
+            document.getElementById('valueDisplay').textContent = allValues[newIndex];
+            
+            // Update the metadata
+            document.querySelector('.navigation .info').textContent = newIndex + ' / ' + maxIndex;
+            
+            // Update the current index for next navigation
+            window.history.replaceState({}, '', '/lindex?key=' + encodeURIComponent(key) + '&index=' + newIndex);
+            currentIndex = newIndex;
         }
 
         // Handle keyboard navigation
         document.addEventListener('keydown', function(event) {
             if (event.key === 'ArrowLeft' || event.key === 'Left') {
                 event.preventDefault();
-                if (currentIndex > 0) {
-                    navigate(-1);
-                }
+                navigate(-1);
             } else if (event.key === 'ArrowRight' || event.key === 'Right') {
                 event.preventDefault();
-                if (currentIndex < maxIndex) {
-                    navigate(1);
-                }
+                navigate(1);
             }
         });
     </script>
