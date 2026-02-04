@@ -70,10 +70,16 @@ func main() {
 	}
 }
 
-// getAvailableLists retrieves a list of available Redis list keys
-func getAvailableLists() ([]string, error) {
+// ListInfo contains information about a Redis list
+type ListInfo struct {
+	Name string
+	Size int64
+}
+
+// getAvailableLists retrieves a list of available Redis list keys with their sizes
+func getAvailableLists() ([]ListInfo, error) {
 	// Use SCAN instead of KEYS for better performance
-	var lists []string
+	var lists []ListInfo
 	var cursor uint64
 
 	for {
@@ -96,16 +102,38 @@ func getAvailableLists() ([]string, error) {
 				// Skip this batch if pipeline fails, log and continue with next scan iteration
 				log.Printf("Warning: Pipeline error, skipping batch: %v", err)
 			} else {
-				// Check results and filter for lists only when pipeline succeeds
+				// First pass: identify which keys are lists
+				var listKeys []string
 				for i, key := range keys {
 					keyType, err := typeCmds[i].Result()
 					if err != nil {
 						continue
 					}
 					if keyType == "list" {
-						lists = append(lists, key)
-						if len(lists) >= maxLists {
-							return lists, nil
+						listKeys = append(listKeys, key)
+					}
+				}
+
+				// Second pass: batch LLEN commands for confirmed lists only
+				if len(listKeys) > 0 {
+					sizePipeline := redisClient.Pipeline()
+					llenCmds := make([]*redis.IntCmd, len(listKeys))
+					for i, key := range listKeys {
+						llenCmds[i] = sizePipeline.LLen(ctx, key)
+					}
+					_, err = sizePipeline.Exec(ctx)
+					if err != nil {
+						log.Printf("Warning: Pipeline error getting list sizes, skipping batch: %v", err)
+					} else {
+						for i, key := range listKeys {
+							size, err := llenCmds[i].Result()
+							if err != nil {
+								continue
+							}
+							lists = append(lists, ListInfo{Name: key, Size: size})
+							if len(lists) >= maxLists {
+								return lists, nil
+							}
 						}
 					}
 				}
@@ -211,6 +239,10 @@ func indexHandler(w http.ResponseWriter, r *http.Request) {
         .list-item a:hover {
             text-decoration: underline;
         }
+        .list-size {
+            color: #666;
+            font-size: 14px;
+        }
         .no-lists {
             color: #666;
             font-style: italic;
@@ -228,7 +260,7 @@ func indexHandler(w http.ResponseWriter, r *http.Request) {
         <h2>Available Redis Lists</h2>
         {{range .AvailableLists}}
         <div class="list-item">
-            <a href="/lindex?key={{. | urlquery}}">{{.}}</a>
+            <a href="/lindex?key={{.Name | urlquery}}">{{.Name}}</a> <span class="list-size">({{.Size}} element{{if ne .Size 1}}s{{end}})</span>
         </div>
         {{end}}
     </div>
@@ -257,7 +289,7 @@ func indexHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	data := struct {
-		AvailableLists []string
+		AvailableLists []ListInfo
 	}{
 		AvailableLists: availableLists,
 	}
