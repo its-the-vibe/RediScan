@@ -70,10 +70,16 @@ func main() {
 	}
 }
 
-// getAvailableLists retrieves a list of available Redis list keys
-func getAvailableLists() ([]string, error) {
+// ListInfo contains information about a Redis list
+type ListInfo struct {
+	Name string
+	Size int64
+}
+
+// getAvailableLists retrieves a list of available Redis list keys with their sizes
+func getAvailableLists() ([]ListInfo, error) {
 	// Use SCAN instead of KEYS for better performance
-	var lists []string
+	var lists []ListInfo
 	var cursor uint64
 
 	for {
@@ -84,12 +90,14 @@ func getAvailableLists() ([]string, error) {
 			return nil, err
 		}
 
-		// Use pipeline to batch TYPE commands for better performance
+		// Use pipeline to batch TYPE and LLEN commands for better performance
 		if len(keys) > 0 {
 			pipe := redisClient.Pipeline()
 			typeCmds := make([]*redis.StatusCmd, len(keys))
+			llenCmds := make([]*redis.IntCmd, len(keys))
 			for i, key := range keys {
 				typeCmds[i] = pipe.Type(ctx, key)
+				llenCmds[i] = pipe.LLen(ctx, key)
 			}
 			_, err = pipe.Exec(ctx)
 			if err != nil {
@@ -103,7 +111,11 @@ func getAvailableLists() ([]string, error) {
 						continue
 					}
 					if keyType == "list" {
-						lists = append(lists, key)
+						size, err := llenCmds[i].Result()
+						if err != nil {
+							continue
+						}
+						lists = append(lists, ListInfo{Name: key, Size: size})
 						if len(lists) >= maxLists {
 							return lists, nil
 						}
@@ -228,7 +240,7 @@ func indexHandler(w http.ResponseWriter, r *http.Request) {
         <h2>Available Redis Lists</h2>
         {{range .AvailableLists}}
         <div class="list-item">
-            <a href="/lindex?key={{. | urlquery}}">{{.}}</a>
+            <a href="/lindex?key={{.Name | urlquery}}">{{.Name}}</a> <span style="color: #666; font-size: 14px;">({{.Size}} element{{if ne .Size 1}}s{{end}})</span>
         </div>
         {{end}}
     </div>
@@ -257,7 +269,7 @@ func indexHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	data := struct {
-		AvailableLists []string
+		AvailableLists []ListInfo
 	}{
 		AvailableLists: availableLists,
 	}
