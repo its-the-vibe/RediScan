@@ -90,34 +90,50 @@ func getAvailableLists() ([]ListInfo, error) {
 			return nil, err
 		}
 
-		// Use pipeline to batch TYPE and LLEN commands for better performance
+		// Use pipeline to batch TYPE commands for better performance
 		if len(keys) > 0 {
 			pipe := redisClient.Pipeline()
 			typeCmds := make([]*redis.StatusCmd, len(keys))
-			llenCmds := make([]*redis.IntCmd, len(keys))
 			for i, key := range keys {
 				typeCmds[i] = pipe.Type(ctx, key)
-				llenCmds[i] = pipe.LLen(ctx, key)
 			}
 			_, err = pipe.Exec(ctx)
 			if err != nil {
 				// Skip this batch if pipeline fails, log and continue with next scan iteration
 				log.Printf("Warning: Pipeline error, skipping batch: %v", err)
 			} else {
-				// Check results and filter for lists only when pipeline succeeds
+				// First pass: identify which keys are lists
+				var listKeys []string
 				for i, key := range keys {
 					keyType, err := typeCmds[i].Result()
 					if err != nil {
 						continue
 					}
 					if keyType == "list" {
-						size, err := llenCmds[i].Result()
-						if err != nil {
-							continue
-						}
-						lists = append(lists, ListInfo{Name: key, Size: size})
-						if len(lists) >= maxLists {
-							return lists, nil
+						listKeys = append(listKeys, key)
+					}
+				}
+				
+				// Second pass: batch LLEN commands for confirmed lists only
+				if len(listKeys) > 0 {
+					pipe2 := redisClient.Pipeline()
+					llenCmds := make([]*redis.IntCmd, len(listKeys))
+					for i, key := range listKeys {
+						llenCmds[i] = pipe2.LLen(ctx, key)
+					}
+					_, err = pipe2.Exec(ctx)
+					if err != nil {
+						log.Printf("Warning: Pipeline error getting list sizes, skipping batch: %v", err)
+					} else {
+						for i, key := range listKeys {
+							size, err := llenCmds[i].Result()
+							if err != nil {
+								continue
+							}
+							lists = append(lists, ListInfo{Name: key, Size: size})
+							if len(lists) >= maxLists {
+								return lists, nil
+							}
 						}
 					}
 				}
