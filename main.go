@@ -228,7 +228,7 @@ func indexHandler(w http.ResponseWriter, r *http.Request) {
         <h2>Available Redis Lists</h2>
         {{range .AvailableLists}}
         <div class="list-item">
-            <a href="/lindex?key={{. | urlquery}}&index=0">{{.}}</a>
+            <a href="/lindex?key={{. | urlquery}}">{{.}}</a>
         </div>
         {{end}}
     </div>
@@ -242,8 +242,8 @@ func indexHandler(w http.ResponseWriter, r *http.Request) {
         <label for="key">Redis List Key:</label>
         <input type="text" id="key" name="key" required placeholder="e.g., mylist">
         
-        <label for="index">Index:</label>
-        <input type="number" id="index" name="index" value="0" min="0" required>
+        <label for="index">Index (optional, defaults to newest):</label>
+        <input type="number" id="index" name="index" value="" min="0" placeholder="Leave empty for newest">
         
         <button type="submit">Inspect</button>
     </form>
@@ -277,12 +277,6 @@ func lindexHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	index, err := strconv.ParseInt(indexStr, 10, 64)
-	if err != nil {
-		renderNotFound(w, "Invalid 'index' parameter")
-		return
-	}
-
 	// Check if key exists and is a list
 	keyType, err := redisClient.Type(ctx, key).Result()
 	if err != nil {
@@ -310,6 +304,19 @@ func lindexHandler(w http.ResponseWriter, r *http.Request) {
 	if llen == 0 {
 		renderNotFound(w, fmt.Sprintf("List '%s' is empty", key))
 		return
+	}
+
+	// Parse index, defaulting to tail (newest item) if not provided
+	var index int64
+	if indexStr == "" {
+		// Default to tail (last index, newest item)
+		index = llen - 1
+	} else {
+		index, err = strconv.ParseInt(indexStr, 10, 64)
+		if err != nil {
+			renderNotFound(w, "Invalid 'index' parameter")
+			return
+		}
 	}
 
 	// Check bounds
@@ -461,9 +468,9 @@ func renderResultWithPreload(w http.ResponseWriter, key string, index int64, lle
     </div>
 
     <div class="navigation">
-        <button id="prevBtn" onclick="navigate(-1)">← Previous (Left Arrow)</button>
+        <button id="prevBtn" onclick="navigate(-1)">← Older (Left Arrow)</button>
         <div class="info">{{.Index}} / {{.MaxIndex}}</div>
-        <button id="nextBtn" onclick="navigate(1)">Next (Right Arrow) →</button>
+        <button id="nextBtn" onclick="navigate(1)">Newer (Right Arrow) →</button>
     </div>
 
     <div class="value-container">
@@ -481,11 +488,11 @@ func renderResultWithPreload(w http.ResponseWriter, key string, index int64, lle
 
         function navigate(delta) {
             let newIndex = currentIndex + delta;
-            // Wrap around: if going below 0, go to maxIndex; if going above maxIndex, go to 0
-            if (newIndex < 0) {
-                newIndex = maxIndex;
-            } else if (newIndex > maxIndex) {
-                newIndex = 0;
+            // Check for wrap around and reload to get fresh data
+            if (newIndex < 0 || newIndex > maxIndex) {
+                // Reload the page to get updated list data
+                window.location.href = '/lindex?key=' + encodeURIComponent(key);
+                return;
             }
             
             // Update the display with the preloaded value
@@ -641,9 +648,9 @@ func renderResultWithoutPreload(w http.ResponseWriter, key string, index int64, 
     </div>
 
     <div class="navigation">
-        <button id="prevBtn" onclick="navigate(-1)">← Previous (Left Arrow)</button>
+        <button id="prevBtn" onclick="navigate(-1)">← Older (Left Arrow)</button>
         <div class="info">{{.Index}} / {{.MaxIndex}}</div>
-        <button id="nextBtn" onclick="navigate(1)">Next (Right Arrow) →</button>
+        <button id="nextBtn" onclick="navigate(1)">Newer (Right Arrow) →</button>
     </div>
 
     <div class="value-container">
@@ -660,11 +667,11 @@ func renderResultWithoutPreload(w http.ResponseWriter, key string, index int64, 
 
         function navigate(delta) {
             let newIndex = currentIndex + delta;
-            // Wrap around: if going below 0, go to maxIndex; if going above maxIndex, go to 0
-            if (newIndex < 0) {
-                newIndex = maxIndex;
-            } else if (newIndex > maxIndex) {
-                newIndex = 0;
+            // Check for wrap around and reload to get fresh data
+            if (newIndex < 0 || newIndex > maxIndex) {
+                // Reload the page to get updated list data
+                window.location.href = '/lindex?key=' + encodeURIComponent(key);
+                return;
             }
             window.location.href = '/lindex?key=' + encodeURIComponent(key) + '&index=' + newIndex;
         }
