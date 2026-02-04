@@ -488,11 +488,14 @@ func renderResultWithPreload(w http.ResponseWriter, key string, index int64, lle
 
         function navigate(delta) {
             let newIndex = currentIndex + delta;
-            // Check for wrap around and reload to get fresh data
-            if (newIndex < 0 || newIndex > maxIndex) {
-                // Reload the page to get updated list data
+            // Check for wrap around
+            if (newIndex < 0) {
+                // Wrapping backwards (older than oldest): reload to get fresh data and show newest
                 window.location.href = '/lindex?key=' + encodeURIComponent(key);
                 return;
+            } else if (newIndex > maxIndex) {
+                // Wrapping forwards (newer than newest): wrap to oldest
+                newIndex = 0;
             }
             
             // Update the display with the preloaded value
@@ -667,11 +670,14 @@ func renderResultWithoutPreload(w http.ResponseWriter, key string, index int64, 
 
         function navigate(delta) {
             let newIndex = currentIndex + delta;
-            // Check for wrap around and reload to get fresh data
-            if (newIndex < 0 || newIndex > maxIndex) {
-                // Reload the page to get updated list data
+            // Check for wrap around
+            if (newIndex < 0) {
+                // Wrapping backwards (older than oldest): reload to get fresh data and show newest
                 window.location.href = '/lindex?key=' + encodeURIComponent(key);
                 return;
+            } else if (newIndex > maxIndex) {
+                // Wrapping forwards (newer than newest): wrap to oldest
+                newIndex = 0;
             }
             window.location.href = '/lindex?key=' + encodeURIComponent(key) + '&index=' + newIndex;
         }
