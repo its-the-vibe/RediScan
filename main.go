@@ -116,12 +116,12 @@ func getAvailableLists() ([]ListInfo, error) {
 
 				// Second pass: batch LLEN commands for confirmed lists only
 				if len(listKeys) > 0 {
-					pipe2 := redisClient.Pipeline()
+					sizePipeline := redisClient.Pipeline()
 					llenCmds := make([]*redis.IntCmd, len(listKeys))
 					for i, key := range listKeys {
-						llenCmds[i] = pipe2.LLen(ctx, key)
+						llenCmds[i] = sizePipeline.LLen(ctx, key)
 					}
-					_, err = pipe2.Exec(ctx)
+					_, err = sizePipeline.Exec(ctx)
 					if err != nil {
 						log.Printf("Warning: Pipeline error getting list sizes, skipping batch: %v", err)
 					} else {
