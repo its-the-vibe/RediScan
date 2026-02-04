@@ -317,18 +317,21 @@ func lindexHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Get the element at index
-	value, err := redisClient.LIndex(ctx, key, index).Result()
+	// Get all elements from the list at once
+	allValues, err := redisClient.LRange(ctx, key, 0, -1).Result()
 	if err != nil {
-		renderError(w, fmt.Sprintf("Error getting element: %v", err))
+		renderError(w, fmt.Sprintf("Error getting list elements: %v", err))
 		return
 	}
 
-	// Try to pretty-print as JSON
-	prettyValue := prettyPrintJSON(value)
+	// Pretty-print all JSON values
+	prettyValues := make([]string, len(allValues))
+	for i, value := range allValues {
+		prettyValues[i] = prettyPrintJSON(value)
+	}
 
-	// Render the result
-	renderResult(w, key, index, llen, prettyValue)
+	// Render the result with all values
+	renderResult(w, key, index, llen, prettyValues)
 }
 
 func prettyPrintJSON(value string) string {
@@ -347,7 +350,7 @@ func prettyPrintJSON(value string) string {
 	return string(prettyJSON)
 }
 
-func renderResult(w http.ResponseWriter, key string, index int64, llen int64, value string) {
+func renderResult(w http.ResponseWriter, key string, index int64, llen int64, allValues []string) {
 	tmplStr := `<!DOCTYPE html>
 <html>
 <head>
@@ -447,20 +450,33 @@ func renderResult(w http.ResponseWriter, key string, index int64, llen int64, va
 
     <div class="value-container">
         <h2>Value:</h2>
-        <pre>{{.Value}}</pre>
+        <pre id="valueDisplay">{{index .AllValues .Index}}</pre>
     </div>
 
     <a href="/" class="back-link">← Back to Home</a>
 
     <script>
         const key = {{.Key}};
-        const currentIndex = {{.Index}};
+        let currentIndex = {{.Index}};
         const maxIndex = {{.MaxIndex}};
+        const allValues = {{.AllValuesJSON}};
 
         function navigate(delta) {
             const newIndex = currentIndex + delta;
             if (newIndex >= 0 && newIndex <= maxIndex) {
-                window.location.href = '/lindex?key=' + encodeURIComponent(key) + '&index=' + newIndex;
+                // Update the display with the preloaded value
+                document.getElementById('valueDisplay').textContent = allValues[newIndex];
+                
+                // Update the metadata
+                document.querySelector('.navigation .info').textContent = newIndex + ' / ' + maxIndex;
+                
+                // Update button states
+                document.getElementById('prevBtn').disabled = (newIndex === 0);
+                document.getElementById('nextBtn').disabled = (newIndex === maxIndex);
+                
+                // Update the current index for next navigation
+                window.history.replaceState({}, '', '/lindex?key=' + encodeURIComponent(key) + '&index=' + newIndex);
+                currentIndex = newIndex;
             }
         }
 
@@ -488,18 +504,27 @@ func renderResult(w http.ResponseWriter, key string, index int64, llen int64, va
 		return
 	}
 
+	// Convert allValues to JSON for embedding in JavaScript
+	allValuesJSON, err := json.Marshal(allValues)
+	if err != nil {
+		renderError(w, fmt.Sprintf("Error encoding values: %v", err))
+		return
+	}
+
 	data := struct {
-		Key      string
-		Index    int64
-		LLen     int64
-		MaxIndex int64
-		Value    string
+		Key           string
+		Index         int64
+		LLen          int64
+		MaxIndex      int64
+		AllValues     []string
+		AllValuesJSON template.JS
 	}{
-		Key:      key,
-		Index:    index,
-		LLen:     llen,
-		MaxIndex: llen - 1,
-		Value:    value,
+		Key:           key,
+		Index:         index,
+		LLen:          llen,
+		MaxIndex:      llen - 1,
+		AllValues:     allValues,
+		AllValuesJSON: template.JS(allValuesJSON),
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
