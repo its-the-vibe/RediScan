@@ -113,7 +113,7 @@ func getAvailableLists() ([]ListInfo, error) {
 						listKeys = append(listKeys, key)
 					}
 				}
-				
+
 				// Second pass: batch LLEN commands for confirmed lists only
 				if len(listKeys) > 0 {
 					pipe2 := redisClient.Pipeline()
