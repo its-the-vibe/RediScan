@@ -571,18 +571,8 @@ func renderResultWithPreload(w http.ResponseWriter, key string, index int64, lle
         const maxIndex = {{.MaxIndex}};
         const allValues = {{.AllValuesJSON}};
 
-        function navigate(delta) {
-            let newIndex = currentIndex + delta;
-            // Check for wrap around
-            if (newIndex < 0) {
-                // Wrapping backwards (older than oldest): reload to get fresh data and show newest
-                window.location.href = '/lindex?key=' + encodeURIComponent(key);
-                return;
-            } else if (newIndex > maxIndex) {
-                // Wrapping forwards (newer than newest): wrap to oldest
-                newIndex = 0;
-            }
-            
+        // Helper function to update the UI to show a specific index
+        function updateToIndex(newIndex) {
             // Update the display with the preloaded value
             document.getElementById('valueDisplay').textContent = allValues[newIndex];
             
@@ -598,20 +588,25 @@ func renderResultWithPreload(w http.ResponseWriter, key string, index int64, lle
             currentIndex = newIndex;
         }
 
+        function navigate(delta) {
+            let newIndex = currentIndex + delta;
+            // Check for wrap around
+            if (newIndex < 0) {
+                // Wrapping backwards (older than oldest): reload to get fresh data and show newest
+                window.location.href = '/lindex?key=' + encodeURIComponent(key);
+                return;
+            } else if (newIndex > maxIndex) {
+                // Wrapping forwards (newer than newest): wrap to oldest
+                newIndex = 0;
+            }
+            
+            updateToIndex(newIndex);
+        }
+
         // Handle slider changes
         document.getElementById('positionSlider').addEventListener('input', function(event) {
             const newIndex = parseInt(event.target.value);
-            
-            // Update the display with the preloaded value
-            document.getElementById('valueDisplay').textContent = allValues[newIndex];
-            
-            // Update the metadata
-            document.querySelector('.navigation .info').textContent = newIndex + ' / ' + maxIndex;
-            document.getElementById('sliderLabel').textContent = newIndex + ' / ' + maxIndex;
-            
-            // Update the current index for next navigation
-            window.history.replaceState({}, '', '/lindex?key=' + encodeURIComponent(key) + '&index=' + newIndex);
-            currentIndex = newIndex;
+            updateToIndex(newIndex);
         });
 
         // Handle keyboard navigation
@@ -810,7 +805,7 @@ func renderResultWithoutPreload(w http.ResponseWriter, key string, index int64, 
     </div>
 
     <div class="slider-container">
-        <label for="positionSlider">Navigate: {{.Index}} / {{.MaxIndex}}</label>
+        <label for="positionSlider">Navigate: <span id="sliderLabel">{{.Index}} / {{.MaxIndex}}</span></label>
         <input type="range" id="positionSlider" min="0" max="{{.MaxIndex}}" value="{{.Index}}" step="1">
     </div>
 
