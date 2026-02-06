@@ -488,6 +488,54 @@ func renderResultWithPreload(w http.ResponseWriter, key string, index int64, lle
         .back-link:hover {
             text-decoration: underline;
         }
+        .slider-container {
+            background-color: white;
+            padding: 15px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .slider-container label {
+            display: block;
+            margin-bottom: 10px;
+            font-weight: bold;
+            text-align: center;
+        }
+        .slider-container input[type="range"] {
+            width: 100%;
+            height: 8px;
+            border-radius: 5px;
+            background: #d3d3d3;
+            outline: none;
+            -webkit-appearance: none;
+        }
+        .slider-container input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: #2196F3;
+            cursor: pointer;
+        }
+        .slider-container input[type="range"]::-moz-range-thumb {
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: #2196F3;
+            cursor: pointer;
+            border: none;
+        }
+        @media (max-width: 600px) {
+            .slider-container input[type="range"]::-webkit-slider-thumb {
+                width: 30px;
+                height: 30px;
+            }
+            .slider-container input[type="range"]::-moz-range-thumb {
+                width: 30px;
+                height: 30px;
+            }
+        }
     </style>
 </head>
 <body>
@@ -505,6 +553,11 @@ func renderResultWithPreload(w http.ResponseWriter, key string, index int64, lle
         <button id="nextBtn" onclick="navigate(1)">Newer (Right Arrow) →</button>
     </div>
 
+    <div class="slider-container">
+        <label for="positionSlider">Navigate: <span id="sliderLabel">{{.Index}} / {{.MaxIndex}}</span></label>
+        <input type="range" id="positionSlider" min="0" max="{{.MaxIndex}}" value="{{.Index}}" step="1">
+    </div>
+
     <div class="value-container">
         <h2>Value:</h2>
         <pre id="valueDisplay">{{index .AllValues .Index}}</pre>
@@ -518,6 +571,23 @@ func renderResultWithPreload(w http.ResponseWriter, key string, index int64, lle
         const maxIndex = {{.MaxIndex}};
         const allValues = {{.AllValuesJSON}};
 
+        // Helper function to update the UI to show a specific index
+        function updateToIndex(newIndex) {
+            // Update the display with the preloaded value
+            document.getElementById('valueDisplay').textContent = allValues[newIndex];
+            
+            // Update the metadata
+            document.querySelector('.navigation .info').textContent = newIndex + ' / ' + maxIndex;
+            
+            // Update the slider
+            document.getElementById('positionSlider').value = newIndex;
+            document.getElementById('sliderLabel').textContent = newIndex + ' / ' + maxIndex;
+            
+            // Update the current index for next navigation
+            window.history.replaceState({}, '', '/lindex?key=' + encodeURIComponent(key) + '&index=' + newIndex);
+            currentIndex = newIndex;
+        }
+
         function navigate(delta) {
             let newIndex = currentIndex + delta;
             // Check for wrap around
@@ -530,16 +600,14 @@ func renderResultWithPreload(w http.ResponseWriter, key string, index int64, lle
                 newIndex = 0;
             }
             
-            // Update the display with the preloaded value
-            document.getElementById('valueDisplay').textContent = allValues[newIndex];
-            
-            // Update the metadata
-            document.querySelector('.navigation .info').textContent = newIndex + ' / ' + maxIndex;
-            
-            // Update the current index for next navigation
-            window.history.replaceState({}, '', '/lindex?key=' + encodeURIComponent(key) + '&index=' + newIndex);
-            currentIndex = newIndex;
+            updateToIndex(newIndex);
         }
+
+        // Handle slider changes
+        document.getElementById('positionSlider').addEventListener('input', function(event) {
+            const newIndex = parseInt(event.target.value);
+            updateToIndex(newIndex);
+        });
 
         // Handle keyboard navigation
         document.addEventListener('keydown', function(event) {
@@ -671,6 +739,54 @@ func renderResultWithoutPreload(w http.ResponseWriter, key string, index int64, 
         .back-link:hover {
             text-decoration: underline;
         }
+        .slider-container {
+            background-color: white;
+            padding: 15px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .slider-container label {
+            display: block;
+            margin-bottom: 10px;
+            font-weight: bold;
+            text-align: center;
+        }
+        .slider-container input[type="range"] {
+            width: 100%;
+            height: 8px;
+            border-radius: 5px;
+            background: #d3d3d3;
+            outline: none;
+            -webkit-appearance: none;
+        }
+        .slider-container input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: #2196F3;
+            cursor: pointer;
+        }
+        .slider-container input[type="range"]::-moz-range-thumb {
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: #2196F3;
+            cursor: pointer;
+            border: none;
+        }
+        @media (max-width: 600px) {
+            .slider-container input[type="range"]::-webkit-slider-thumb {
+                width: 30px;
+                height: 30px;
+            }
+            .slider-container input[type="range"]::-moz-range-thumb {
+                width: 30px;
+                height: 30px;
+            }
+        }
     </style>
 </head>
 <body>
@@ -686,6 +802,11 @@ func renderResultWithoutPreload(w http.ResponseWriter, key string, index int64, 
         <button id="prevBtn" onclick="navigate(-1)">← Older (Left Arrow)</button>
         <div class="info">{{.Index}} / {{.MaxIndex}}</div>
         <button id="nextBtn" onclick="navigate(1)">Newer (Right Arrow) →</button>
+    </div>
+
+    <div class="slider-container">
+        <label for="positionSlider">Navigate: <span id="sliderLabel">{{.Index}} / {{.MaxIndex}}</span></label>
+        <input type="range" id="positionSlider" min="0" max="{{.MaxIndex}}" value="{{.Index}}" step="1">
     </div>
 
     <div class="value-container">
@@ -713,6 +834,12 @@ func renderResultWithoutPreload(w http.ResponseWriter, key string, index int64, 
             }
             window.location.href = '/lindex?key=' + encodeURIComponent(key) + '&index=' + newIndex;
         }
+
+        // Handle slider changes
+        document.getElementById('positionSlider').addEventListener('change', function(event) {
+            const newIndex = parseInt(event.target.value);
+            window.location.href = '/lindex?key=' + encodeURIComponent(key) + '&index=' + newIndex;
+        });
 
         // Handle keyboard navigation
         document.addEventListener('keydown', function(event) {
