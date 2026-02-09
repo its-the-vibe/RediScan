@@ -16,7 +16,7 @@ import (
 var (
 	redisClient    *redis.Client
 	ctx            = context.Background()
-	maxLists       = 10   // Default max number of lists to display on index page
+	maxLists       = 25   // Default max number of lists to display on index page
 	maxPreloadSize = 1000 // Maximum number of values to preload for instant navigation
 )
 
