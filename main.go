@@ -357,6 +357,7 @@ func lindexHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Get all elements from the list at once for instant navigation
+	// Note: All Redis lists in this system are guaranteed to be small enough to preload
 	allValues, err := redisClient.LRange(ctx, key, 0, -1).Result()
 	if err != nil {
 		renderError(w, fmt.Sprintf("Error getting list elements: %v", err))
