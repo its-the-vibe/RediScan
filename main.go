@@ -14,10 +14,9 @@ import (
 )
 
 var (
-	redisClient    *redis.Client
-	ctx            = context.Background()
-	maxLists       = 25   // Default max number of lists to display on index page
-	maxPreloadSize = 1000 // Maximum number of values to preload for instant navigation
+	redisClient *redis.Client
+	ctx         = context.Background()
+	maxLists    = 25 // Default max number of lists to display on index page
 )
 
 func main() {
@@ -357,38 +356,21 @@ func lindexHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Decide whether to preload all values or load one at a time
-	// For lists larger than maxPreloadSize, use single-value loading to avoid memory issues
-	if llen <= int64(maxPreloadSize) {
-		// Get all elements from the list at once for instant navigation
-		allValues, err := redisClient.LRange(ctx, key, 0, -1).Result()
-		if err != nil {
-			renderError(w, fmt.Sprintf("Error getting list elements: %v", err))
-			return
-		}
-
-		// Pretty-print all JSON values
-		prettyValues := make([]string, len(allValues))
-		for i, value := range allValues {
-			prettyValues[i] = prettyPrintJSON(value)
-		}
-
-		// Render the result with all values preloaded
-		renderResultWithPreload(w, key, index, llen, prettyValues)
-	} else {
-		// For large lists, load only the current value
-		value, err := redisClient.LIndex(ctx, key, index).Result()
-		if err != nil {
-			renderError(w, fmt.Sprintf("Error getting element: %v", err))
-			return
-		}
-
-		// Try to pretty-print as JSON
-		prettyValue := prettyPrintJSON(value)
-
-		// Render the result without preloading (traditional navigation)
-		renderResultWithoutPreload(w, key, index, llen, prettyValue)
+	// Get all elements from the list at once for instant navigation
+	allValues, err := redisClient.LRange(ctx, key, 0, -1).Result()
+	if err != nil {
+		renderError(w, fmt.Sprintf("Error getting list elements: %v", err))
+		return
 	}
+
+	// Pretty-print all JSON values
+	prettyValues := make([]string, len(allValues))
+	for i, value := range allValues {
+		prettyValues[i] = prettyPrintJSON(value)
+	}
+
+	// Render the result with all values preloaded
+	renderResultWithPreload(w, key, index, llen, prettyValues)
 }
 
 func prettyPrintJSON(value string) string {
@@ -422,6 +404,13 @@ func renderResultWithPreload(w http.ResponseWriter, key string, index int64, lle
         }
         h1 {
             color: #333;
+        }
+        h1 a {
+            color: #333;
+            text-decoration: none;
+        }
+        h1 a:hover {
+            text-decoration: underline;
         }
         .metadata {
             background-color: white;
@@ -539,7 +528,7 @@ func renderResultWithPreload(w http.ResponseWriter, key string, index int64, lle
     </style>
 </head>
 <body>
-    <h1>RediScan - Redis List Inspector</h1>
+    <h1><a href="/">RediScan - Redis List Inspector</a></h1>
     
     <div class="metadata">
         <p><strong>Key:</strong> {{.Key}}</p>
@@ -584,7 +573,6 @@ func renderResultWithPreload(w http.ResponseWriter, key string, index int64, lle
             document.getElementById('sliderLabel').textContent = newIndex + ' / ' + maxIndex;
             
             // Update the current index for next navigation
-            window.history.replaceState({}, '', '/lindex?key=' + encodeURIComponent(key) + '&index=' + newIndex);
             currentIndex = newIndex;
         }
 
@@ -650,229 +638,6 @@ func renderResultWithPreload(w http.ResponseWriter, key string, index int64, lle
 		MaxIndex:      llen - 1,
 		AllValues:     allValues,
 		AllValuesJSON: template.JS(allValuesJSON),
-	}
-
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := tmpl.Execute(w, data); err != nil {
-		log.Printf("Error rendering template: %v", err)
-	}
-}
-
-func renderResultWithoutPreload(w http.ResponseWriter, key string, index int64, llen int64, value string) {
-	tmplStr := `<!DOCTYPE html>
-<html>
-<head>
-    <title>RediScan - {{.Key}}[{{.Index}}]</title>
-    <style>
-        body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            max-width: 1200px;
-            margin: 0 auto;
-            padding: 20px;
-            background-color: #f5f5f5;
-        }
-        h1 {
-            color: #333;
-        }
-        .metadata {
-            background-color: white;
-            padding: 15px;
-            border-radius: 5px;
-            margin-bottom: 20px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-        }
-        .metadata p {
-            margin: 5px 0;
-        }
-        .navigation {
-            background-color: white;
-            padding: 15px;
-            border-radius: 5px;
-            margin-bottom: 20px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-            display: flex;
-            gap: 10px;
-            align-items: center;
-        }
-        .navigation button {
-            background-color: #2196F3;
-            color: white;
-            padding: 10px 20px;
-            border: none;
-            border-radius: 3px;
-            cursor: pointer;
-            font-size: 16px;
-        }
-        .navigation button:hover {
-            background-color: #0b7dda;
-        }
-        .navigation button:disabled {
-            background-color: #ccc;
-            cursor: not-allowed;
-        }
-        .navigation .info {
-            flex-grow: 1;
-            text-align: center;
-            font-weight: bold;
-        }
-        .value-container {
-            background-color: white;
-            padding: 20px;
-            border-radius: 5px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-        }
-        pre {
-            background-color: #f4f4f4;
-            padding: 15px;
-            border-radius: 3px;
-            overflow-x: auto;
-            border: 1px solid #ddd;
-            white-space: pre-wrap;
-            word-wrap: break-word;
-        }
-        .back-link {
-            display: inline-block;
-            margin-top: 20px;
-            color: #2196F3;
-            text-decoration: none;
-        }
-        .back-link:hover {
-            text-decoration: underline;
-        }
-        .slider-container {
-            background-color: white;
-            padding: 15px;
-            border-radius: 5px;
-            margin-bottom: 20px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-        }
-        .slider-container label {
-            display: block;
-            margin-bottom: 10px;
-            font-weight: bold;
-            text-align: center;
-        }
-        .slider-container input[type="range"] {
-            width: 100%;
-            height: 8px;
-            border-radius: 5px;
-            background: #d3d3d3;
-            outline: none;
-            -webkit-appearance: none;
-        }
-        .slider-container input[type="range"]::-webkit-slider-thumb {
-            -webkit-appearance: none;
-            appearance: none;
-            width: 20px;
-            height: 20px;
-            border-radius: 50%;
-            background: #2196F3;
-            cursor: pointer;
-        }
-        .slider-container input[type="range"]::-moz-range-thumb {
-            width: 20px;
-            height: 20px;
-            border-radius: 50%;
-            background: #2196F3;
-            cursor: pointer;
-            border: none;
-        }
-        @media (max-width: 600px) {
-            .slider-container input[type="range"]::-webkit-slider-thumb {
-                width: 30px;
-                height: 30px;
-            }
-            .slider-container input[type="range"]::-moz-range-thumb {
-                width: 30px;
-                height: 30px;
-            }
-        }
-    </style>
-</head>
-<body>
-    <h1>RediScan - Redis List Inspector</h1>
-    
-    <div class="metadata">
-        <p><strong>Key:</strong> {{.Key}}</p>
-        <p><strong>Index:</strong> {{.Index}}</p>
-        <p><strong>List Length:</strong> {{.LLen}}</p>
-    </div>
-
-    <div class="navigation">
-        <button id="prevBtn" onclick="navigate(-1)">← Older (Left Arrow)</button>
-        <div class="info">{{.Index}} / {{.MaxIndex}}</div>
-        <button id="nextBtn" onclick="navigate(1)">Newer (Right Arrow) →</button>
-    </div>
-
-    <div class="slider-container">
-        <label for="positionSlider">Navigate: <span id="sliderLabel">{{.Index}} / {{.MaxIndex}}</span></label>
-        <input type="range" id="positionSlider" min="0" max="{{.MaxIndex}}" value="{{.Index}}" step="1">
-    </div>
-
-    <div class="value-container">
-        <h2>Value:</h2>
-        <pre>{{.Value}}</pre>
-    </div>
-
-    <a href="/" class="back-link">← Back to Home</a>
-
-    <script>
-        const key = {{.Key}};
-        const currentIndex = {{.Index}};
-        const maxIndex = {{.MaxIndex}};
-
-        function navigate(delta) {
-            let newIndex = currentIndex + delta;
-            // Check for wrap around
-            if (newIndex < 0) {
-                // Wrapping backwards (older than oldest): reload to get fresh data and show newest
-                window.location.href = '/lindex?key=' + encodeURIComponent(key);
-                return;
-            } else if (newIndex > maxIndex) {
-                // Wrapping forwards (newer than newest): wrap to oldest
-                newIndex = 0;
-            }
-            window.location.href = '/lindex?key=' + encodeURIComponent(key) + '&index=' + newIndex;
-        }
-
-        // Handle slider changes
-        document.getElementById('positionSlider').addEventListener('change', function(event) {
-            const newIndex = parseInt(event.target.value);
-            window.location.href = '/lindex?key=' + encodeURIComponent(key) + '&index=' + newIndex;
-        });
-
-        // Handle keyboard navigation
-        document.addEventListener('keydown', function(event) {
-            if (event.key === 'ArrowLeft' || event.key === 'Left') {
-                event.preventDefault();
-                navigate(-1);
-            } else if (event.key === 'ArrowRight' || event.key === 'Right') {
-                event.preventDefault();
-                navigate(1);
-            }
-        });
-    </script>
-</body>
-</html>`
-
-	tmpl, err := template.New("result").Parse(tmplStr)
-	if err != nil {
-		renderError(w, fmt.Sprintf("Template error: %v", err))
-		return
-	}
-
-	data := struct {
-		Key      string
-		Index    int64
-		LLen     int64
-		MaxIndex int64
-		Value    string
-	}{
-		Key:      key,
-		Index:    index,
-		LLen:     llen,
-		MaxIndex: llen - 1,
-		Value:    value,
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
