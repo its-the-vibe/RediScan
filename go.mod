@@ -1,6 +1,6 @@
 module github.com/its-the-vibe/RediScan
 
-go 1.26.0
+go 1.26.1
 
 require github.com/redis/go-redis/v9 v9.18.0
 
