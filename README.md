@@ -1,5 +1,7 @@
 # RediScan
 
+[![CI](https://github.com/its-the-vibe/RediScan/actions/workflows/ci.yaml/badge.svg)](https://github.com/its-the-vibe/RediScan/actions/workflows/ci.yaml)
+
 A lightweight web UI to inspect and page through Redis lists with automatic JSON pretty-printing and keyboard navigation.
 
 ## Features
@@ -122,6 +124,24 @@ go build -o rediscan main.go
 ```bash
 docker build -t rediscan:latest .
 ```
+
+## Development
+
+### Makefile
+
+A `Makefile` is provided to standardise common development tasks:
+
+| Target | Description |
+|--------|-------------|
+| `make build` | Compile the Go binary (`rediscan`) |
+| `make test` | Run all unit tests |
+| `make lint` | Run `go vet` static analysis |
+| `make ci` | Run lint, build, and test (used in CI) |
+| `make clean` | Remove the compiled binary |
+
+### CI
+
+A GitHub Actions workflow (`.github/workflows/ci.yaml`) runs `make ci` automatically on every push and pull request to `main`. The current build status is shown by the badge at the top of this README.
 
 ## Testing with Redis
 
