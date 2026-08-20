@@ -1,8 +1,8 @@
 # Build stage
-FROM golang:1.26.6-alpine AS builder
+FROM --platform=$BUILDPLATFORM golang:1.26.6-alpine AS builder
 
-# Install CA certificates for HTTPS
-RUN apk add --no-cache ca-certificates
+ARG TARGETOS
+ARG TARGETARCH
 
 WORKDIR /app
 
@@ -16,19 +16,18 @@ RUN go mod download
 COPY main.go ./
 
 # Build static binary
-RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -ldflags="-w -s" -o rediscan .
+RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -trimpath -ldflags="-s -w" -o rediscan .
 
-# Runtime stage - using scratch for minimal image size
-FROM scratch
+# Runtime stage (distroless)
+FROM gcr.io/distroless/static-debian13:nonroot
 
 # Copy the binary from builder
 COPY --from=builder /app/rediscan /rediscan
 
-# Copy CA certificates for HTTPS (if needed)
-COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
-
 # Expose port
 EXPOSE 8080
+
+USER nonroot:nonroot
 
 # Run the binary
 ENTRYPOINT ["/rediscan"]
