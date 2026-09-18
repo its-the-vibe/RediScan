@@ -8,6 +8,8 @@ A lightweight web UI to inspect and page through Redis lists with automatic JSON
 
 - 🔍 **Inspect Redis Lists**: Browse through Redis list elements with a user-friendly web interface
 - 📋 **List Discovery**: Automatically displays available Redis lists on the index page with clickable links
+- 🔀 **Sorting & Filtering Options**: Sort discovered lists by name or size in ascending or descending order
+- 🗑️ **Key Deletion**: Delete keys directly from the index page UI with a confirmation dialog
 - 🎨 **JSON Pretty-Printing**: Automatically formats JSON data for easy reading
 - ⌨️ **Keyboard Navigation**: Use arrow keys to navigate through list elements
 - 🔒 **Secure**: Supports Redis password authentication
@@ -86,9 +88,11 @@ Configure the application using environment variables:
 4. Click "Inspect" to view the element
 5. Use the navigation buttons or arrow keys (← →) to browse through the list
 
-### API Endpoint
+### API Endpoints
 
-The service provides a REST endpoint:
+The service provides the following REST endpoints:
+
+#### Inspect List Item
 
 ```
 GET /lindex?key=<redis_list_key>&index=<index>
@@ -110,6 +114,23 @@ curl "http://localhost:8080/lindex?key=mylist&index=0"
   - The key is not a list
   - The list is empty
   - The index is out of bounds
+
+#### Delete Key
+
+```
+DELETE /key/{name}
+```
+
+**Example:**
+```bash
+curl -X DELETE "http://localhost:8080/key/mylist"
+```
+
+**Response:**
+- `200 OK`: JSON response indicating key was deleted
+- `400 Bad Request`: Missing key name
+- `404 Not Found`: Key not found or already deleted
+- `500 Internal Server Error`: Redis deletion error
 
 ## Building
 

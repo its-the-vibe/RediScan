@@ -99,3 +99,93 @@ func TestLindexHandler_MissingKey(t *testing.T) {
 		t.Errorf("expected 'Missing' in response body, got: %s", body)
 	}
 }
+
+func TestSortLists_NameAsc(t *testing.T) {
+	lists := []ListInfo{
+		{Name: "charlie", Size: 10},
+		{Name: "alice", Size: 50},
+		{Name: "bob", Size: 20},
+	}
+	sortLists(lists, "name", "asc")
+
+	if lists[0].Name != "alice" || lists[1].Name != "bob" || lists[2].Name != "charlie" {
+		t.Errorf("unexpected name asc order: %+v", lists)
+	}
+}
+
+func TestSortLists_NameDesc(t *testing.T) {
+	lists := []ListInfo{
+		{Name: "alice", Size: 50},
+		{Name: "charlie", Size: 10},
+		{Name: "bob", Size: 20},
+	}
+	sortLists(lists, "name", "desc")
+
+	if lists[0].Name != "charlie" || lists[1].Name != "bob" || lists[2].Name != "alice" {
+		t.Errorf("unexpected name desc order: %+v", lists)
+	}
+}
+
+func TestSortLists_SizeAsc(t *testing.T) {
+	lists := []ListInfo{
+		{Name: "alice", Size: 50},
+		{Name: "charlie", Size: 10},
+		{Name: "bob", Size: 20},
+	}
+	sortLists(lists, "size", "asc")
+
+	if lists[0].Name != "charlie" || lists[1].Name != "bob" || lists[2].Name != "alice" {
+		t.Errorf("unexpected size asc order: %+v", lists)
+	}
+}
+
+func TestSortLists_SizeDesc(t *testing.T) {
+	lists := []ListInfo{
+		{Name: "charlie", Size: 10},
+		{Name: "alice", Size: 50},
+		{Name: "bob", Size: 20},
+	}
+	sortLists(lists, "size", "desc")
+
+	if lists[0].Name != "alice" || lists[1].Name != "bob" || lists[2].Name != "charlie" {
+		t.Errorf("unexpected size desc order: %+v", lists)
+	}
+}
+
+func TestSortLists_SizeTieBreakerName(t *testing.T) {
+	lists := []ListInfo{
+		{Name: "charlie", Size: 10},
+		{Name: "alice", Size: 10},
+		{Name: "bob", Size: 10},
+	}
+	sortLists(lists, "size", "asc")
+
+	if lists[0].Name != "alice" || lists[1].Name != "bob" || lists[2].Name != "charlie" {
+		t.Errorf("unexpected size tie-breaker order: %+v", lists)
+	}
+}
+
+func TestDeleteKeyHandler_InvalidMethod(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/key/test", nil)
+	rr := httptest.NewRecorder()
+
+	deleteKeyHandler(rr, req)
+
+	if rr.Code != http.StatusMethodNotAllowed {
+		t.Errorf("expected status 450 Method Not Allowed, got %d", rr.Code)
+	}
+}
+
+func TestDeleteKeyHandler_MissingKeyName(t *testing.T) {
+	req := httptest.NewRequest(http.MethodDelete, "/key/", nil)
+	rr := httptest.NewRecorder()
+
+	deleteKeyHandler(rr, req)
+
+	if rr.Code != http.StatusBadRequest {
+		t.Errorf("expected status 400 Bad Request for missing key name, got %d", rr.Code)
+	}
+	if !strings.Contains(rr.Body.String(), "Invalid or missing key name") {
+		t.Errorf("expected error message in body, got: %s", rr.Body.String())
+	}
+}
