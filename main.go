@@ -7,8 +7,11 @@ import (
 	"html/template"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
+	"sort"
 	"strconv"
+	"strings"
 
 	"github.com/redis/go-redis/v9"
 )
@@ -57,6 +60,7 @@ func main() {
 	// Setup HTTP handlers
 	http.HandleFunc("/", indexHandler)
 	http.HandleFunc("/lindex", lindexHandler)
+	http.HandleFunc("/key/", deleteKeyHandler)
 
 	port := os.Getenv("PORT")
 	if port == "" {
@@ -147,10 +151,73 @@ func getAvailableLists() ([]ListInfo, error) {
 	return lists, nil
 }
 
+func sortLists(lists []ListInfo, sortBy string, order string) {
+	sort.Slice(lists, func(i, j int) bool {
+		if sortBy == "size" {
+			if lists[i].Size != lists[j].Size {
+				if order == "desc" {
+					return lists[i].Size > lists[j].Size
+				}
+				return lists[i].Size < lists[j].Size
+			}
+			return lists[i].Name < lists[j].Name
+		}
+		if order == "desc" {
+			return lists[i].Name > lists[j].Name
+		}
+		return lists[i].Name < lists[j].Name
+	})
+}
+
+func deleteKeyHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodDelete {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	keyPath := strings.TrimPrefix(r.URL.Path, "/key/")
+	keyName, err := url.PathUnescape(keyPath)
+	if err != nil || keyName == "" {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "Invalid or missing key name"})
+		return
+	}
+
+	deletedCount, err := redisClient.Del(ctx, keyName).Result()
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{"error": fmt.Sprintf("Failed to delete key: %v", err)})
+		return
+	}
+
+	if deletedCount == 0 {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		json.NewEncoder(w).Encode(map[string]string{"error": fmt.Sprintf("Key '%s' not found or already deleted", keyName)})
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]string{"message": fmt.Sprintf("Key '%s' successfully deleted", keyName)})
+}
+
 func indexHandler(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path != "/" {
 		http.NotFound(w, r)
 		return
+	}
+
+	sortParam := strings.ToLower(r.URL.Query().Get("sort"))
+	if sortParam != "size" {
+		sortParam = "name"
+	}
+
+	orderParam := strings.ToLower(r.URL.Query().Get("order"))
+	if orderParam != "desc" {
+		orderParam = "asc"
 	}
 
 	// Get available Redis lists
@@ -158,6 +225,8 @@ func indexHandler(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		log.Printf("Error fetching available lists: %v", err)
 		// Continue even if we can't fetch lists
+	} else {
+		sortLists(availableLists, sortParam, orderParam)
 	}
 
 	tmpl := `<!DOCTYPE html>
@@ -223,12 +292,37 @@ func indexHandler(w http.ResponseWriter, r *http.Request) {
             margin-top: 0;
             color: #333;
         }
+        .sort-controls {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 15px;
+            flex-wrap: wrap;
+        }
+        .sort-controls label {
+            display: inline;
+            margin-bottom: 0;
+            font-weight: normal;
+        }
+        .sort-controls select {
+            padding: 6px 10px;
+            border: 1px solid #ddd;
+            border-radius: 3px;
+            font-size: 14px;
+            background-color: white;
+        }
         .list-item {
             padding: 10px;
             margin: 5px 0;
             background-color: #f9f9f9;
             border-radius: 3px;
             border-left: 3px solid #4CAF50;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .list-info-item {
+            flex-grow: 1;
         }
         .list-item a {
             color: #2196F3;
@@ -246,6 +340,87 @@ func indexHandler(w http.ResponseWriter, r *http.Request) {
             color: #666;
             font-style: italic;
         }
+        .delete-btn {
+            background-color: #f44336;
+            color: white;
+            padding: 5px 10px;
+            border: none;
+            border-radius: 3px;
+            cursor: pointer;
+            font-size: 13px;
+            margin-left: 10px;
+        }
+        .delete-btn:hover {
+            background-color: #d32f2f;
+        }
+        .alert {
+            padding: 12px 20px;
+            margin-bottom: 15px;
+            border-radius: 4px;
+            display: none;
+        }
+        .alert-success {
+            background-color: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        .alert-error {
+            background-color: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0,0,0,0.5);
+            align-items: center;
+            justify-content: center;
+        }
+        .modal-content {
+            background-color: white;
+            padding: 25px;
+            border-radius: 5px;
+            max-width: 450px;
+            width: 90%;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+        }
+        .modal-content h3 {
+            margin-top: 0;
+            color: #333;
+        }
+        .modal-actions {
+            display: flex;
+            justify-content: flex-end;
+            gap: 10px;
+            margin-top: 20px;
+        }
+        .cancel-btn {
+            background-color: #9e9e9e;
+            color: white;
+            padding: 8px 16px;
+            border: none;
+            border-radius: 3px;
+            cursor: pointer;
+        }
+        .cancel-btn:hover {
+            background-color: #757575;
+        }
+        .confirm-delete-btn {
+            background-color: #f44336;
+            color: white;
+            padding: 8px 16px;
+            border: none;
+            border-radius: 3px;
+            cursor: pointer;
+        }
+        .confirm-delete-btn:hover {
+            background-color: #d32f2f;
+        }
     </style>
 </head>
 <body>
@@ -254,21 +429,106 @@ func indexHandler(w http.ResponseWriter, r *http.Request) {
         <p>This tool allows you to inspect Redis lists with automatic JSON pretty-printing.</p>
         <p>Use cursor keys to navigate through list elements once loaded.</p>
     </div>
-    {{if .AvailableLists}}
+
+    <div id="alertBanner" class="alert"></div>
+
     <div class="available-lists">
         <h2>Available Redis Lists</h2>
+        <form id="sortForm" method="get" action="/" class="sort-controls">
+            <label for="sortSelect">Sort by:</label>
+            <select id="sortSelect" name="sort" onchange="document.getElementById('sortForm').submit()">
+                <option value="name" {{if eq .Sort "name"}}selected{{end}}>Name</option>
+                <option value="size" {{if eq .Sort "size"}}selected{{end}}>Number of values</option>
+            </select>
+
+            <label for="orderSelect">Order:</label>
+            <select id="orderSelect" name="order" onchange="document.getElementById('sortForm').submit()">
+                <option value="asc" {{if eq .Order "asc"}}selected{{end}}>Ascending</option>
+                <option value="desc" {{if eq .Order "desc"}}selected{{end}}>Descending</option>
+            </select>
+        </form>
+
+        {{if .AvailableLists}}
         {{range .AvailableLists}}
-        <div class="list-item">
-            <a href="/lindex?key={{.Name | urlquery}}">{{.Name}}</a> <span class="list-size">({{.Size}} element{{if ne .Size 1}}s{{end}})</span>
+        <div class="list-item" id="item-{{.Name}}">
+            <div class="list-info-item">
+                <a href="/lindex?key={{.Name | urlquery}}">{{.Name}}</a> <span class="list-size">({{.Size}} element{{if ne .Size 1}}s{{end}})</span>
+            </div>
+            <button class="delete-btn" onclick="openDeleteModal({{.Name}})">Delete</button>
         </div>
         {{end}}
-    </div>
-    {{else}}
-    <div class="available-lists">
-        <h2>Available Redis Lists</h2>
+        {{else}}
         <p class="no-lists">No Redis lists found. Create a list in Redis to get started.</p>
+        {{end}}
     </div>
-    {{end}}
+
+    <!-- Delete Confirmation Modal -->
+    <div id="deleteModal" class="modal">
+        <div class="modal-content">
+            <h3>Confirm Key Deletion</h3>
+            <p>Are you sure you want to delete the key <strong id="deleteKeyName"></strong>?</p>
+            <p style="color: #666; font-size: 14px;">This action cannot be undone.</p>
+            <div class="modal-actions">
+                <button class="cancel-btn" onclick="closeDeleteModal()">Cancel</button>
+                <button id="confirmDeleteBtn" class="confirm-delete-btn" onclick="confirmDelete()">Delete Key</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let keyToDelete = '';
+
+        function showAlert(message, type) {
+            const banner = document.getElementById('alertBanner');
+            banner.textContent = message;
+            banner.className = 'alert alert-' + type;
+            banner.style.display = 'block';
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+
+        function openDeleteModal(key) {
+            keyToDelete = key;
+            document.getElementById('deleteKeyName').textContent = "'" + key + "'";
+            document.getElementById('deleteModal').style.display = 'flex';
+        }
+
+        function closeDeleteModal() {
+            keyToDelete = '';
+            document.getElementById('deleteModal').style.display = 'none';
+        }
+
+        function confirmDelete() {
+            if (!keyToDelete) return;
+            const targetKey = keyToDelete;
+            closeDeleteModal();
+
+            fetch('/key/' + encodeURIComponent(targetKey), {
+                method: 'DELETE'
+            })
+            .then(async response => {
+                const data = await response.json();
+                if (response.ok) {
+                    showAlert(data.message || "Key successfully deleted.", 'success');
+                    setTimeout(() => {
+                        window.location.reload();
+                    }, 1000);
+                } else {
+                    showAlert(data.error || "Failed to delete key.", 'error');
+                }
+            })
+            .catch(err => {
+                showAlert("Error deleting key: " + err.message, 'error');
+            });
+        }
+
+        // Close modal when clicking outside modal content
+        window.onclick = function(event) {
+            const modal = document.getElementById('deleteModal');
+            if (event.target === modal) {
+                closeDeleteModal();
+            }
+        };
+    </script>
     <form action="/lindex" method="get">
         <label for="key">Redis List Key:</label>
         <input type="text" id="key" name="key" required placeholder="e.g., mylist">
@@ -289,8 +549,12 @@ func indexHandler(w http.ResponseWriter, r *http.Request) {
 
 	data := struct {
 		AvailableLists []ListInfo
+		Sort           string
+		Order          string
 	}{
 		AvailableLists: availableLists,
+		Sort:           sortParam,
+		Order:          orderParam,
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
